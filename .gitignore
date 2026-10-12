@@ -1,0 +1,28 @@
+# Environment variables and secrets
+.env
+.env.*
+!.env.example
+
+# Dependencies
+node_modules/
+venv/
+.venv/
+
+# Python cache
+__pycache__/
+*.py[cod]
+
+# Build output
+dist/
+build/
+
+# IDE and OS files
+.DS_Store
+.vscode/
+.idea/
+
+# Logs
+*.log
+
+# Local database files
+*.sqlite3
