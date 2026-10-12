@@ -19,7 +19,9 @@ export const SalesView: React.FC = () => {
   const [selectedOrder, setSelectedOrder] = useState<SalesOrder | null>(null);
 
   const diamondSalesSummary = useMemo(() => {
-    const diamondItems = sales.flatMap((order) =>
+    const activeSales = sales.filter((order) => order.status !== 'CANCELLED');
+
+    const diamondItems = activeSales.flatMap((order) =>
       order.items.filter((item) => item.item_type === 'DIAMOND')
     );
 
