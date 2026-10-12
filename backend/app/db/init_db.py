@@ -1,7 +1,9 @@
 from datetime import datetime, timezone
 from decimal import Decimal
 import logging
+import os
 from sqlalchemy.orm import Session
+from app.core.config import settings
 from app.db.session import engine, Base, SessionLocal
 from app.models import (
     User, Location, Supplier, Customer, Diamond, JewelleryProduct,
@@ -13,45 +15,42 @@ from app.core.permissions import UserRole
 
 logger = logging.getLogger(__name__)
 
+
+def _get_admin_email() -> str:
+    return os.getenv("ADMIN_EMAIL") or settings.ADMIN_EMAIL
+
+
+def _get_admin_password() -> str:
+    return os.getenv("ADMIN_PASSWORD") or settings.ADMIN_PASSWORD
+
+
 def init_db(db: Session) -> None:
     # 1. Create all tables
     Base.metadata.create_all(bind=engine)
-    
-    # 2. Seed default users
-    admin_user = db.query(User).filter(User.email == "admin@dharmadiamond.com").first()
+
+    admin_email = _get_admin_email().strip().lower()
+    admin_password = _get_admin_password()
+
+    # 2. Seed a single administrator account using environment configuration.
+    admin_user = db.query(User).filter(User.email == admin_email).first()
     if not admin_user:
         admin_user = User(
-            email="admin@dharmadiamond.com",
-            hashed_password=get_password_hash("admin123"),
-            full_name="Dharma SuperAdmin",
+            email=admin_email,
+            hashed_password=get_password_hash(admin_password),
+            full_name=settings.ADMIN_FULL_NAME,
             role=UserRole.ADMIN.value,
             is_active=True,
             last_login_at=datetime.now(timezone.utc)
         )
         db.add(admin_user)
+    else:
+        admin_user.hashed_password = get_password_hash(admin_password)
+        admin_user.full_name = settings.ADMIN_FULL_NAME
+        admin_user.role = UserRole.ADMIN.value
+        admin_user.is_active = True
 
-    mgr_user = db.query(User).filter(User.email == "manager@dharmadiamond.com").first()
-    if not mgr_user:
-        mgr_user = User(
-            email="manager@dharmadiamond.com",
-            hashed_password=get_password_hash("manager123"),
-            full_name="Rajesh Sharma (Vault Manager)",
-            role=UserRole.INVENTORY_MANAGER.value,
-            is_active=True
-        )
-        db.add(mgr_user)
-
-    sales_user = db.query(User).filter(User.email == "sales@dharmadiamond.com").first()
-    if not sales_user:
-        sales_user = User(
-            email="sales@dharmadiamond.com",
-            hashed_password=get_password_hash("sales123"),
-            full_name="Pooja Patel (Senior Sales)",
-            role=UserRole.SALES_STAFF.value,
-            is_active=True
-        )
-        db.add(sales_user)
-
+    # A single-user app intentionally does not create a broad role hierarchy on startup.
+    # Additional roles remain available for future extension, but the bootstrap is admin-only.
     db.flush()
 
     # 3. Seed locations
