@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { ShoppingCart, Plus, CheckCircle, XCircle, Search, Eye } from 'lucide-react';
 import api from '../api/client';
 import type { SalesOrder, Customer, Diamond, JewelleryItem } from '../types';
@@ -17,6 +17,23 @@ export const SalesView: React.FC = () => {
 
   const [isNewSaleOpen, setIsNewSaleOpen] = useState(false);
   const [selectedOrder, setSelectedOrder] = useState<SalesOrder | null>(null);
+
+  const diamondSalesSummary = useMemo(() => {
+    const diamondItems = sales.flatMap((order) =>
+      order.items.filter((item) => item.item_type === 'DIAMOND')
+    );
+
+    const diamondSalesCount = diamondItems.length;
+    const diamondRevenue = diamondItems.reduce(
+      (total, item) => total + Number(item.line_total || 0),
+      0
+    );
+
+    return {
+      diamondSalesCount,
+      diamondRevenue,
+    };
+  }, [sales]);
 
   // New Sale Form
   const [selectedCustomerId, setSelectedCustomerId] = useState('');
@@ -134,6 +151,24 @@ export const SalesView: React.FC = () => {
             New Sales Order
           </button>
         )}
+      </div>
+
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <div className="bg-white border border-slate-200/80 rounded-xl p-4 shadow-sm">
+          <p className="text-xs uppercase tracking-[0.18em] text-slate-500">Diamond Sales Count</p>
+          <div className="mt-3 flex items-end justify-between gap-3">
+            <span className="text-3xl font-bold text-slate-900">{diamondSalesSummary.diamondSalesCount}</span>
+            <ShoppingCart className="w-8 h-8 text-amber-600" />
+          </div>
+        </div>
+
+        <div className="bg-white border border-slate-200/80 rounded-xl p-4 shadow-sm">
+          <p className="text-xs uppercase tracking-[0.18em] text-slate-500">Diamond Revenue</p>
+          <div className="mt-3 flex items-end justify-between gap-3">
+            <span className="text-3xl font-bold text-slate-900">{formatCurrency(diamondSalesSummary.diamondRevenue)}</span>
+            <CheckCircle className="w-8 h-8 text-emerald-600" />
+          </div>
+        </div>
       </div>
 
       {/* Sales Orders Table */}

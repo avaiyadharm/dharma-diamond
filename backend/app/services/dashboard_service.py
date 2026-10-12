@@ -11,22 +11,23 @@ from app.models.sale import SalesOrder, SalesOrderItem
 from app.models.purchase import PurchaseOrder
 from app.models.invoice_payment import Invoice, Payment
 from app.models.stock_movement import StockMovement
+from app.core.inventory import InventoryState
 
 def get_dashboard_metrics(db: Session) -> Dict[str, Any]:
     # 1. Inventory Summary (Live Aggregations)
-    active_diamonds = db.query(Diamond).filter(Diamond.status == "AVAILABLE").all()
+    active_diamonds = db.query(Diamond).filter(Diamond.status == InventoryState.AVAILABLE.value).all()
     dia_count = len(active_diamonds)
     dia_carats = sum([d.available_carats or d.carat_weight for d in active_diamonds], Decimal("0.0000"))
     dia_cost = sum([d.calculated_acquisition_cost or d.purchase_cost for d in active_diamonds], Decimal("0.00"))
     dia_asking = sum([d.asking_price for d in active_diamonds], Decimal("0.00"))
 
-    active_jewellery = db.query(JewelleryItem).filter(JewelleryItem.status == "AVAILABLE").all()
+    active_jewellery = db.query(JewelleryItem).filter(JewelleryItem.status == InventoryState.AVAILABLE.value).all()
     jwl_count = len(active_jewellery)
     jwl_weight = sum([j.gross_weight_grams for j in active_jewellery], Decimal("0.0000"))
     jwl_cost = sum([j.total_cost for j in active_jewellery], Decimal("0.00"))
     jwl_asking = sum([j.selling_price for j in active_jewellery], Decimal("0.00"))
 
-    active_gems = db.query(Gemstone).filter(Gemstone.status == "AVAILABLE").all()
+    active_gems = db.query(Gemstone).filter(Gemstone.status == InventoryState.AVAILABLE.value).all()
     gem_count = len(active_gems)
     gem_carats = sum([g.carat_weight for g in active_gems], Decimal("0.0000"))
     gem_cost = sum([g.purchase_cost for g in active_gems], Decimal("0.00"))
@@ -36,9 +37,9 @@ def get_dashboard_metrics(db: Session) -> Dict[str, Any]:
     total_asking_val = dia_asking + jwl_asking + gem_asking
 
     reserved_count = (
-        db.query(Diamond).filter(Diamond.status == "RESERVED").count() +
-        db.query(JewelleryItem).filter(JewelleryItem.status == "RESERVED").count() +
-        db.query(Gemstone).filter(Gemstone.status == "RESERVED").count()
+        db.query(Diamond).filter(Diamond.status == InventoryState.RESERVED.value).count() +
+        db.query(JewelleryItem).filter(JewelleryItem.status == InventoryState.RESERVED.value).count() +
+        db.query(Gemstone).filter(Gemstone.status == InventoryState.RESERVED.value).count()
     )
 
     # 2. Business Summary (Current Month)
@@ -106,10 +107,10 @@ def get_dashboard_metrics(db: Session) -> Dict[str, Any]:
     # 5. Inventory Category Breakdown for Charts
     category_counts = [
         {"name": "Solitaire Diamonds", "value": dia_count, "carats": float(dia_carats)},
-        {"name": "Rings & Solitaires", "value": db.query(JewelleryItem).join(JewelleryProduct).filter(JewelleryProduct.category == "Ring", JewelleryItem.status == "AVAILABLE").count(), "weight": 0},
-        {"name": "Necklaces", "value": db.query(JewelleryItem).join(JewelleryProduct).filter(JewelleryProduct.category == "Necklace", JewelleryItem.status == "AVAILABLE").count(), "weight": 0},
-        {"name": "Earrings", "value": db.query(JewelleryItem).join(JewelleryProduct).filter(JewelleryProduct.category == "Earrings", JewelleryItem.status == "AVAILABLE").count(), "weight": 0},
-        {"name": "Bangles & Bracelets", "value": db.query(JewelleryItem).join(JewelleryProduct).filter(JewelleryProduct.category.in_(["Bangles", "Bracelet"]), JewelleryItem.status == "AVAILABLE").count(), "weight": 0},
+        {"name": "Rings & Solitaires", "value": db.query(JewelleryItem).join(JewelleryProduct).filter(JewelleryProduct.category == "Ring", JewelleryItem.status == InventoryState.AVAILABLE.value).count(), "weight": 0},
+        {"name": "Necklaces", "value": db.query(JewelleryItem).join(JewelleryProduct).filter(JewelleryProduct.category == "Necklace", JewelleryItem.status == InventoryState.AVAILABLE.value).count(), "weight": 0},
+        {"name": "Earrings", "value": db.query(JewelleryItem).join(JewelleryProduct).filter(JewelleryProduct.category == "Earrings", JewelleryItem.status == InventoryState.AVAILABLE.value).count(), "weight": 0},
+        {"name": "Bangles & Bracelets", "value": db.query(JewelleryItem).join(JewelleryProduct).filter(JewelleryProduct.category.in_(["Bangles", "Bracelet"]), JewelleryItem.status == InventoryState.AVAILABLE.value).count(), "weight": 0},
         {"name": "Loose Gemstones", "value": gem_count, "carats": float(gem_carats)}
     ]
 

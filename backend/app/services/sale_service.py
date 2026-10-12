@@ -10,6 +10,7 @@ from app.models.diamond import Diamond
 from app.models.jewellery import JewelleryItem
 from app.models.gemstone import Gemstone
 from app.models.party import Customer
+from app.core.inventory import InventoryState, validate_inventory_transition
 from app.schemas.sale import SalesOrderCreate
 from app.services.stock_movement_service import record_movement
 from app.services.audit_service import log_audit_event
@@ -112,18 +113,23 @@ def create_sales_order(db: Session, so_in: SalesOrderCreate, user_id: str) -> Sa
             if not diamond:
                 raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Diamond {item_data.sku} not found")
             
-            # Check availability or customer reservation
-            if diamond.status not in ["AVAILABLE", "RESERVED"]:
+            allowed_sale_states = {InventoryState.AVAILABLE.value, InventoryState.RESERVED.value}
+            if diamond.status not in allowed_sale_states:
                 raise HTTPException(
                     status_code=status.HTTP_400_BAD_REQUEST,
                     detail=f"Diamond '{diamond.sku}' cannot be sold because its status is '{diamond.status}'"
+                )
+            if not validate_inventory_transition(diamond.status, InventoryState.SOLD):
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail=f"Invalid inventory transition from '{diamond.status}' to '{InventoryState.SOLD.value}'"
                 )
             
             cost_price = diamond.calculated_acquisition_cost or diamond.purchase_cost
             total_cost_basis += cost_price
 
             # Atomic status update
-            diamond.status = "SOLD"
+            diamond.status = InventoryState.SOLD.value
             record_movement(
                 db=db,
                 item_type="DIAMOND",
@@ -145,16 +151,22 @@ def create_sales_order(db: Session, so_in: SalesOrderCreate, user_id: str) -> Sa
             if not jewellery:
                 raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Jewellery piece {item_data.sku} not found")
 
-            if jewellery.status not in ["AVAILABLE", "RESERVED"]:
+            allowed_sale_states = {InventoryState.AVAILABLE.value, InventoryState.RESERVED.value}
+            if jewellery.status not in allowed_sale_states:
                 raise HTTPException(
                     status_code=status.HTTP_400_BAD_REQUEST,
                     detail=f"Jewellery piece '{jewellery.sku}' cannot be sold because its status is '{jewellery.status}'"
+                )
+            if not validate_inventory_transition(jewellery.status, InventoryState.SOLD):
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail=f"Invalid inventory transition from '{jewellery.status}' to '{InventoryState.SOLD.value}'"
                 )
 
             cost_price = jewellery.total_cost
             total_cost_basis += cost_price
 
-            jewellery.status = "SOLD"
+            jewellery.status = InventoryState.SOLD.value
             record_movement(
                 db=db,
                 item_type="JEWELLERY",
@@ -176,16 +188,21 @@ def create_sales_order(db: Session, so_in: SalesOrderCreate, user_id: str) -> Sa
             if not gem:
                 raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Gemstone {item_data.sku} not found")
 
-            if gem.status != "AVAILABLE":
+            if gem.status != InventoryState.AVAILABLE.value:
                 raise HTTPException(
                     status_code=status.HTTP_400_BAD_REQUEST,
                     detail=f"Gemstone '{gem.sku}' cannot be sold because its status is '{gem.status}'"
+                )
+            if not validate_inventory_transition(gem.status, InventoryState.SOLD):
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail=f"Invalid inventory transition from '{gem.status}' to '{InventoryState.SOLD.value}'"
                 )
 
             cost_price = gem.purchase_cost
             total_cost_basis += cost_price
 
-            gem.status = "SOLD"
+            gem.status = InventoryState.SOLD.value
             record_movement(
                 db=db,
                 item_type="GEMSTONE",
@@ -323,12 +340,20 @@ def cancel_sales_order(db: Session, sales_order_id: str, reason: str, user_id: s
     if so.status in ["CANCELLED", "RETURNED"]:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"Order is already in '{so.status}' status")
 
-    # Reversal of inventory
+    # Reversal of inventory is only valid when the item is still in a sale-reversible state.
     for item in so.items:
         if item.diamond_id:
             diamond = db.query(Diamond).filter(Diamond.id == item.diamond_id).first()
             if diamond:
-                diamond.status = "AVAILABLE"
+                if not validate_inventory_transition(diamond.status, InventoryState.AVAILABLE):
+                    raise HTTPException(
+                        status_code=status.HTTP_400_BAD_REQUEST,
+                        detail=(
+                            f"Cannot cancel sale {so.so_number} because diamond '{diamond.sku}' is in "
+                            f"'{diamond.status}' state and cannot be reverted to AVAILABLE"
+                        )
+                    )
+                diamond.status = InventoryState.AVAILABLE.value
                 record_movement(
                     db=db,
                     item_type="DIAMOND",
@@ -347,7 +372,15 @@ def cancel_sales_order(db: Session, sales_order_id: str, reason: str, user_id: s
         elif item.jewellery_item_id:
             jewellery = db.query(JewelleryItem).filter(JewelleryItem.id == item.jewellery_item_id).first()
             if jewellery:
-                jewellery.status = "AVAILABLE"
+                if not validate_inventory_transition(jewellery.status, InventoryState.AVAILABLE):
+                    raise HTTPException(
+                        status_code=status.HTTP_400_BAD_REQUEST,
+                        detail=(
+                            f"Cannot cancel sale {so.so_number} because jewellery '{jewellery.sku}' is in "
+                            f"'{jewellery.status}' state and cannot be reverted to AVAILABLE"
+                        )
+                    )
+                jewellery.status = InventoryState.AVAILABLE.value
                 record_movement(
                     db=db,
                     item_type="JEWELLERY",

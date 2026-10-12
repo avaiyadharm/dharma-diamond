@@ -9,6 +9,7 @@ from app.models.diamond import Diamond
 from app.models.inventory_location import Location
 from app.models.party import Supplier, Customer
 from app.models.sale import ItemReservation
+from app.core.inventory import InventoryState, validate_inventory_transition
 from app.schemas.diamond import DiamondCreate, DiamondUpdate, DiamondAdjustment
 from app.services.stock_movement_service import record_movement
 from app.services.audit_service import log_audit_event
@@ -227,7 +228,7 @@ def reserve_diamond(db: Session, diamond_id: str, customer_id: str, hours: int, 
     if not diamond:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Diamond not found")
     
-    if diamond.status != "AVAILABLE":
+    if not validate_inventory_transition(diamond.status, InventoryState.RESERVED):
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=f"Diamond is currently in '{diamond.status}' state and cannot be reserved"
@@ -237,7 +238,7 @@ def reserve_diamond(db: Session, diamond_id: str, customer_id: str, hours: int, 
     if not customer:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Customer not found")
 
-    diamond.status = "RESERVED"
+    diamond.status = InventoryState.RESERVED.value
     
     expires_at = datetime.now(timezone.utc) + timedelta(hours=hours) if hours > 0 else None
     reservation = ItemReservation(
@@ -278,7 +279,12 @@ def release_reservation(db: Session, diamond_id: str, user_id: str) -> Diamond:
     if reservation:
         reservation.status = "RELEASED"
 
-    diamond.status = "AVAILABLE"
+    if not validate_inventory_transition(diamond.status, InventoryState.AVAILABLE):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Reservation cannot be released from '{diamond.status}' state"
+        )
+    diamond.status = InventoryState.AVAILABLE.value
 
     log_audit_event(
         db=db,
@@ -300,7 +306,13 @@ def adjust_diamond(db: Session, adjustment: DiamondAdjustment, user_id: str) -> 
 
     old_status = diamond.status
     if adjustment.new_status:
-        diamond.status = adjustment.new_status
+        target_status = adjustment.new_status.upper()
+        if not validate_inventory_transition(old_status, target_status):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Invalid inventory transition from '{old_status}' to '{target_status}'"
+            )
+        diamond.status = target_status
 
     if adjustment.new_location_id:
         source_loc = diamond.location_id
